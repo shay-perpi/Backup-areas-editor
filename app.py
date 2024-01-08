@@ -57,6 +57,12 @@ def main():
             # Display current JSON data
             st.write("Current JSON Data:", json_data)
 
+    st.markdown("""
+     Valid area should be: \n
+A name should be indicative for the user. \n
+Footprint should be in the structure of a list with 5 coordinates [[X,Y],[X,Y],[X,Y],[X,Y],[X,Y]] numbers only.\n
+Record ID that appears in the database without quotes.
+    """)
     # Let the user choose between form and file upload
     option = st.radio("Choose an option:", ("Add New Area (Form)", "Upload JSON File"))
 
@@ -65,6 +71,8 @@ def main():
         st.write("## Add New Area")
         new_area_name = st.text_input("Name:")
         new_area_footprint = st.text_area("Footprint (List of coordinates):", height=100)
+        new_area_footprint = new_area_footprint.replace(" ", "").replace("\n", "")
+
         new_area_record_id = st.text_input("Record ID:")
 
         # Zoom level options
@@ -83,18 +91,20 @@ def main():
             if st.button("Add Area"):
                 try:
                     # Validate the record ID before adding the area
-                    if validate_record_id(new_area_record_id):
-                        new_area_resolution_value = calculate_resolution_deg(selected_zoom_level)
-                    else:
+                    if not validate_record_id(new_area_record_id):
                         st.error(f"Record ID '{new_area_record_id}' does not exist in the database.")
-                    if validate_footprint(new_area_footprint):
-                        new_area_resolution_value = calculate_resolution_deg(selected_zoom_level)
-                    else:
-                        st.error(f"Footprint does not valid.")
+                        return  # Do not proceed if validation fails
+
+                    # Validate the footprint before adding the area
+                    if not validate_footprint(new_area_footprint):
+                        st.error("Footprint is not valid.")
+                        return  # Do not proceed if validation fails
+
+                    new_area_resolution_value = calculate_resolution_deg(selected_zoom_level)
 
                     new_area = {
                         "name": new_area_name,
-                        "Footprint": new_area_footprint,
+                        "Footprint": eval(new_area_footprint),
                         "record_id": new_area_record_id,
                         "resolutionDeg": new_area_resolution_value,
                         "zoomlevel": selected_zoom_level
@@ -140,10 +150,19 @@ def main():
     for area in json_data.get('areas', []):
         if st.button(f"Delete {area['name']}"):
             # Confirmation dialog
-            if st.warning(f"Are you sure you want to delete {area['name']}?"):
+            confirmation = st.warning(f"Are you sure you want to delete {area['name']}?")
+
+            col1, col2 = st.beta_columns(2)
+
+            if col1.button("Yes", key=f"delete_{area['name']}"):
                 json_data['areas'].remove(area)
                 save_json_to_s3(json_data)
-                st.success(f"Area '{area['name']}' deleted successfully!")
+                confirmation.empty()  # Clear the confirmation message
+                col1.success(f"Area '{area['name']}' deleted successfully!")
+
+            if col2.button("No", key=f"cancel_{area['name']}"):
+                confirmation.empty()  # Clear the confirmation message
+                col2.info(f"Deletion of '{area['name']}' canceled.")
 
 
 if __name__ == "__main__":

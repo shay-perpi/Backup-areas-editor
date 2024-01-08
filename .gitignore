@@ -1,0 +1,7 @@
+playground.py
+log/
+*.log
+*.tar
+*.gpkg
+venv/
+export_config.json

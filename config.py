@@ -1,3 +1,4 @@
+import json
 import os
 import geojson
 import psycopg2
@@ -10,7 +11,7 @@ s3_credentials = os.getenv("s3_credentials") or {
     "s3_ip": "http://10.8.0.9:9000",
     "s3_bucket_folder": ""
 }
-pg_credential = os.getenv("pg_credential") or{
+pg_credential = os.getenv("pg_credential") or {
         "pg_host": "10.0.4.4",
         "pg_user": "postgres",
         "pg_port": "5432",
@@ -21,14 +22,16 @@ pg_credential = os.getenv("pg_credential") or{
         "pg_agent_table": "raster-qa"
     }
 table_in_db = os.getenv("tableInDB",'"RasterCatalogManager".records')
-record_id_in_db =os.getenv("recordInDB", 'identifier')
+record_id_in_db = os.getenv("recordInDB", 'identifier')
+
 
 def validate_footprint(input_foot_print):
     footprint_data = {
-    "coordinates": [input_foot_print]
+    "coordinates": [eval(input_foot_print)]
     }
     try:
-        geojson.loads(footprint_data)
+        geojson.loads(json.dumps(footprint_data))
+        print(f"is valid {input_foot_print}")
         return True
     except ValueError as e:
         print(f"Footprint validation failed: {e}")
