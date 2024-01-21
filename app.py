@@ -5,6 +5,11 @@ import streamlit as st
 import folium
 from streamlit_folium import folium_static
 import json
+import time
+from urllib3.connectionpool import xrange
+from streamlit_js_eval import streamlit_js_eval
+
+from export_send import export_to_send
 from config import s3_credentials, s3_path_key, calculate_resolution_deg, validate_record_id, validate_footprint
 
 # Set your S3 credentials
@@ -34,10 +39,25 @@ def save_json_to_s3(data):
     try:
         s3.put_object(Body=json.dumps(data, indent=2), Bucket=S3_BUCKET, Key=S3_KEY)
         st.success("JSON saved successfully!")
+        time.sleep(2)
+        st.rerun()
+
     except Exception as e:
         st.error(f"Error saving JSON to S3: {str(e)}")
         raise e
 
+
+def delete_area(deleted_name, json_data):
+    new_list = []
+    # new_list = [obj for obj in json_data['areas'] if obj['name'] != deleted_name]
+    for area in json_data['areas']:
+        if area['name'] not in deleted_name:
+            new_list.append(area)
+    json_data['areas'] = new_list
+    save_json_to_s3(json_data)
+
+
+# ...
 
 def main():
     st.set_page_config(
@@ -63,6 +83,7 @@ A name should be indicative for the user. \n
 Footprint should be in the structure of a list with 5 coordinates [[X,Y],[X,Y],[X,Y],[X,Y],[X,Y]] numbers only.\n
 Record ID that appears in the database without quotes.
     """)
+
     # Let the user choose between form and file upload
     option = st.radio("Choose an option:", ("Add New Area (Form)", "Upload JSON File"))
 
@@ -100,6 +121,11 @@ Record ID that appears in the database without quotes.
                         st.error("Footprint is not valid.")
                         return  # Do not proceed if validation fails
 
+                    # Check if the name is unique (case-insensitive)
+                    if any(area['name'].lower() == new_area_name.lower() for area in json_data.get('areas', [])):
+                        st.error(f"Area with name '{new_area_name}' already exists. Please choose a unique name.")
+                        return  # Do not proceed if the name is not unique
+
                     new_area_resolution_value = calculate_resolution_deg(selected_zoom_level)
 
                     new_area = {
@@ -132,10 +158,10 @@ Record ID that appears in the database without quotes.
 
                 for new_area in new_areas:
                     # Check if the area already exists in json_data
-                    if new_area not in json_data["areas"]:
-                        json_data["areas"].append(new_area)
-                    else:
+                    if any(area['name'].lower() == new_area['name'].lower() for area in json_data.get('areas', [])):
                         st.warning(f"Duplicate area found: {new_area['name']}. It won't be added.")
+                    else:
+                        json_data["areas"].append(new_area)
 
                 # Save updated json_data to S3
                 save_json_to_s3(json_data)
@@ -146,23 +172,40 @@ Record ID that appears in the database without quotes.
                 st.error(f"Invalid JSON file: {str(e)}")
 
     # Display areas for deletion
-    st.write("## Delete Area")
-    for area in json_data.get('areas', []):
-        if st.button(f"Delete {area['name']}"):
-            # Confirmation dialog
-            confirmation = st.warning(f"Are you sure you want to delete {area['name']}?")
+    st.write("## Select Areas")
 
-            col1, col2 = st.beta_columns(2)
+    # Checkbox to select areas for deletion
+    selected_areas = {}
+    for area in json_data['areas']:
+        checkbox_key = f"chose_checkbox_{area['name']}"
+        selected_areas[checkbox_key] = st.checkbox(f"{area['name']}", key=checkbox_key, value=False,)
 
-            if col1.button("Yes", key=f"delete_{area['name']}"):
-                json_data['areas'].remove(area)
-                save_json_to_s3(json_data)
-                confirmation.empty()  # Clear the confirmation message
-                col1.success(f"Area '{area['name']}' deleted successfully!")
+    # Button to delete selected areas
+    if st.button("Delete Selected Areas", type="primary"):
+        areas_to_delete = []
+        for checkbox_key, is_selected in selected_areas.items():
+            if is_selected:
+                area_name = checkbox_key.replace("chose_checkbox_", "")
+                areas_to_delete.append(area_name)
 
-            if col2.button("No", key=f"cancel_{area['name']}"):
-                confirmation.empty()  # Clear the confirmation message
-                col2.info(f"Deletion of '{area['name']}' canceled.")
+        delete_area(areas_to_delete, json_data)
+
+    # Button to export selected areas
+    if st.button("Export Selected Areas", type="secondary"):
+        areas_to_export = []
+        export_list = []
+        for checkbox_key, is_selected in selected_areas.items():
+            if is_selected:
+                area_name = checkbox_key.replace("chose_checkbox_", "")
+                areas_to_export.append(area_name)
+        for selected_export in json_data['areas']:
+            if selected_export['name'] in areas_to_export:
+                export_list.append(selected_export)
+        export_to_send(export_list)
+        st.success("Export areas")
+        time.sleep(1)
+        selected_areas.clear()
+        streamlit_js_eval(js_expressions="parent.window.location.reload()")
 
 
 if __name__ == "__main__":

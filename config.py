@@ -4,30 +4,22 @@ import geojson
 import psycopg2
 
 s3_path_key = os.getenv('path_key', 'backups/area_zones.json')
-s3_credentials = os.getenv("s3_credentials") or {
-    "s3_user": "automation",
-    "s3_password": "automationPassword",
-    "s3_bucket": "automation-team",
-    "s3_ip": "http://10.8.0.9:9000",
-    "s3_bucket_folder": ""
-}
-pg_credential = os.getenv("pg_credential") or {
-        "pg_host": "10.0.4.4",
-        "pg_user": "postgres",
-        "pg_port": "5432",
-        "pg_pass": "Libot4allnonprod",
-        "pg_job_task_table": "raster-integration",
-        "pg_pycsw_record_table": "raster-qa",
-        "pg_mapproxy_table": "raster-qa",
-        "pg_agent_table": "raster-qa"
-    }
-table_in_db = os.getenv("tableInDB",'"RasterCatalogManager".records')
+s3_credentials = os.getenv("s3_credentials", None)
+pg_credential = os.getenv("pg_credential", None)
+
+pg_credential = dict(json.loads(pg_credential))
+s3_credentials = dict(json.loads(s3_credentials))
+
+
+schema_in_db = os.getenv("schemaInDB", "RasterCatalogManager")
+table_in_db = os.getenv("tableInDB", 'records')
 record_id_in_db = os.getenv("recordInDB", 'identifier')
+table_query = '"{}".{}'.format(schema_in_db, table_in_db,record_id_in_db)
 
 
 def validate_footprint(input_foot_print):
     footprint_data = {
-    "coordinates": [eval(input_foot_print)]
+        "coordinates": [eval(input_foot_print)]
     }
     try:
         geojson.loads(json.dumps(footprint_data))
@@ -36,23 +28,24 @@ def validate_footprint(input_foot_print):
     except ValueError as e:
         print(f"Footprint validation failed: {e}")
         return False
-# Example usage without specifying the "type"
 
+
+# Example usage without specifying the "type"
 
 
 def validate_record_id(record_id):
     try:
         # Replace these values with your PostgreSQL connection details
         db_connection = psycopg2.connect(database=pg_credential["pg_job_task_table"],
-                        host=pg_credential["pg_host"],
-                        user=pg_credential["pg_user"],
-                        password=pg_credential["pg_pass"],
-                        port=pg_credential["pg_port"])
+                                         host=pg_credential["pg_host"],
+                                         user=pg_credential["pg_user"],
+                                         password=pg_credential["pg_pass"],
+                                         port=pg_credential["pg_port"])
         # Create a cursor
         cursor = db_connection.cursor()
 
         # Perform a query to check if the record ID exists
-        cursor.execute(f"SELECT COUNT(*) FROM {table_in_db} WHERE {record_id_in_db} = %s", (record_id,))
+        cursor.execute(f"SELECT COUNT(*) FROM {table_query} WHERE {record_id_in_db}= %s", (record_id,))
         count = cursor.fetchone()[0]
 
         # Close the cursor and connection
